@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chi tiết sản phẩm - Chợ Đồ Cũ</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .address-map{height:280px;border-radius:12px;margin-top:12px;background:#e9ecef}
+        .seller-chat-panel{position:fixed;right:24px;bottom:24px;z-index:1050;width:min(420px,calc(100% - 32px));padding:20px;background:#fff;border-radius:16px;box-shadow:0 12px 35px rgba(15,23,42,.2);border:1px solid #e2e8f0}
+    </style>
+</head>
+<body>
+    <header class="main-header">
+        <div class="container d-flex justify-content-between align-items-center py-3">
+            <a href="/" class="brand-logo text-decoration-none"><i class="bi bi-recycle"></i> CHỢ ĐỒ CŨ</a>
+            <a href="/" class="btn btn-outline-primary">← Về trang chủ</a>
+        </div>
+    </header>
+    <main class="container py-5">
+        <div id="productDetail" class="bg-white rounded-4 shadow-sm p-4">
+            <div class="text-center text-muted py-5">Đang tải thông tin sản phẩm...</div>
+        </div>
+    </main>
+    <script>
+        async function loadProductDetail() {
+            const container = document.getElementById('productDetail');
+            const id = new URLSearchParams(window.location.search).get('id');
+            if (!id) {
+                container.innerHTML = '<div class="alert alert-warning">Không xác định được sản phẩm.</div>';
+                return;
+            }
+            try {
+                const response = await fetch(`/api/products/${encodeURIComponent(id)}`);
+                const product = await response.json();
+                if (!response.ok) throw new Error(product.message || 'Không tìm thấy sản phẩm.');
+                document.title = `${product.TenSanPham} - Chợ Đồ Cũ`;
+                container.innerHTML = `
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <img src="${product.HinhAnh || '/uploads/default.jpg'}"
+                                class="img-fluid rounded-4 product-detail-image"
+                                alt="${product.TenSanPham}">
+                        </div>
+                        <div class="col-md-6">
+                            <span class="badge bg-primary mb-3">${product.TenDanhMuc}</span>
+                            <h1 class="fw-bold">${product.TenSanPham}</h1>
+                            <p class="display-6 text-danger fw-bold">${Number(product.GiaBan).toLocaleString('vi-VN')} đ</p>
+                            <hr>
+                            <p><strong>Tình trạng:</strong> ${product.TinhTrang || 'Đang cập nhật'}</p>
+                            <p><strong>Địa chỉ xem hàng:</strong> ${product.DiaChiXemHang || 'Đang cập nhật'}</p>
+                            <p><strong>Người bán:</strong> ${product.TenNguoiBan || 'Đang cập nhật'}</p>
+                            <p><strong>Số điện thoại:</strong> ${product.SdtNguoiBan || 'Liên hệ người bán'}</p>
+                            <button class="btn btn-primary btn-lg mt-3" onclick="openSellerChat()">
+                                <i class="bi bi-chat-dots me-2"></i>Liên hệ người bán
+                            </button>
+                            <button class="btn btn-success btn-lg mt-3 ms-2" onclick="showOrderForm()">
+                                <i class="bi bi-bag-check me-2"></i>Mua sản phẩm
+                            </button>
+                        </div>
+                        <div class="col-12 d-none" id="orderForm">
+                            <hr>
+                            <h3 class="fw-bold">Địa chỉ người nhận</h3>
+                            <p id="orderMapNotice" class="text-muted">Nhập địa chỉ chi tiết. Google Maps sẽ được bật sau khi bạn thêm API key.</p>
+                            <input id="orderAddress" class="form-control" placeholder="Số nhà, đường, phường/xã..." required>
+                            <div id="orderMap" class="address-map d-none"></div>
+                            <input type="hidden" id="orderLatitude">
+                            <input type="hidden" id="orderLongitude">
+                            <button class="btn btn-primary mt-3" onclick="submitOrder()">Xác nhận địa chỉ nhận hàng</button>
+                        </div>
+                        <div class="col-12">
+                            <h3 class="fw-bold">Mô tả sản phẩm</h3>
+                            <p class="product-description">${product.MoTa || 'Người bán chưa thêm mô tả.'}</p>
+                        </div>
+                    </div>`;
+                window.currentSeller = product;
+            } catch (error) {
+                container.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+            }
+        }
+        loadProductDetail();
+        async function showOrderForm() {
+            document.getElementById('orderForm').classList.remove('d-none');
+            const response = await fetch('/api/config/maps');
+            const config = await response.json();
+            if (!config.apiKey) return;
+            window.initOrderMap = function () {
+                const mapElement = document.getElementById('orderMap');
+                const input = document.getElementById('orderAddress');
+                const map = new google.maps.Map(mapElement, { center: { lat: 16.047, lng: 108.206 }, zoom: 5 });
+                const marker = new google.maps.Marker({ map });
+                const autocomplete = new google.maps.places.Autocomplete(input, { componentRestrictions: { country: 'vn' } });
+                mapElement.classList.remove('d-none');
+                document.getElementById('orderMapNotice').textContent = 'Chọn địa chỉ từ Google Maps để ghim vị trí người nhận.';
+                autocomplete.addListener('place_changed', () => {
+                    const place = autocomplete.getPlace();
+                    if (!place.geometry) return;
+                    const location = place.geometry.location;
+                    map.setCenter(location);
+                    map.setZoom(16);
+                    marker.setPosition(location);
+                    document.getElementById('orderLatitude').value = location.lat();
+                    document.getElementById('orderLongitude').value = location.lng();
+                    input.value = place.formatted_address || input.value;
+                });
+            };
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.apiKey)}&libraries=places&callback=initOrderMap`;
+            script.async = true;
+            document.head.appendChild(script);
+        }
+        async function submitOrder() {
+            const address = document.getElementById('orderAddress').value.trim();
+            if (!address) return alert('Vui lòng nhập địa chỉ người nhận.');
+            const token = localStorage.getItem('token');
+            if (!token) { alert('Bạn cần đăng nhập trước khi mua hàng.'); location.href='/auth.html?mode=login'; return; }
+            try {
+                const response = await fetch('/api/orders', {
+                    method: 'POST', headers: { 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+                    body: JSON.stringify({ maSanPham: Number(new URLSearchParams(location.search).get('id')), hoTenNguoiNhan: JSON.parse(localStorage.getItem('user')||'{}').hoTen || 'Khách hàng', soDienThoaiNhan: JSON.parse(localStorage.getItem('user')||'{}').soDienThoai || '', diaChiNhan: address, phiVanChuyen: 30000, phuongThucThanhToan: 'COD' })
+                });
+                const data=await response.json();
+                if(!response.ok) throw new Error(data.message||'Không thể đặt hàng.');
+                alert(`Đặt hàng thành công! Mã đơn #${data.maDonHang}`);
+                location.href='/account.html';
+            } catch(e) { alert(e.message); }
+        }
+        function openSellerChat() {
+            const seller = window.currentSeller;
+            if (!seller) return;
+            const phone = String(seller.SdtNguoiBan || '').replace(/\D/g, '');
+            const email = seller.EmailNguoiBan || '';
+            const message = `Xin chào ${seller.TenNguoiBan || ''}, tôi quan tâm sản phẩm "${seller.TenSanPham}".`;
+            const zaloUrl = phone ? `https://zalo.me/${phone}` : '';
+            const emailUrl = email ? `mailto:${email}?subject=${encodeURIComponent(`Hỏi sản phẩm ${seller.TenSanPham}`)}&body=${encodeURIComponent(message)}` : '';
+            const actions = [
+                zaloUrl ? `<a class="btn btn-primary" target="_blank" rel="noopener" href="${zaloUrl}"><i class="bi bi-chat-dots me-2"></i>Chat qua Zalo</a>` : '',
+                emailUrl ? `<a class="btn btn-outline-primary" href="${emailUrl}"><i class="bi bi-envelope me-2"></i>Gửi email</a>` : '',
+                phone ? `<a class="btn btn-outline-success" href="tel:${phone}"><i class="bi bi-telephone me-2"></i>Gọi điện</a>` : ''
+            ].filter(Boolean).join('');
+            const chat = document.createElement('div');
+            chat.className = 'seller-chat-panel';
+            chat.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">Chat với ${seller.TenNguoiBan || 'người bán'}</h5>
+                    <button class="btn-close" type="button" aria-label="Đóng"></button>
+                </div>
+                <p class="text-muted small mb-3">${message}</p>
+                <div class="d-flex flex-wrap gap-2">${actions || '<span class="text-muted">Người bán chưa cung cấp kênh liên hệ.</span>'}</div>`;
+            chat.querySelector('.btn-close').addEventListener('click', () => chat.remove());
+            document.body.appendChild(chat);
+        }
+    </script>
+</body>
+</html>
